@@ -95,6 +95,8 @@ class DiffusionModelConfig(BaseConfig):
 
     algo: Optional[DiffusionRolloutAlgoConfig] = field(default_factory=DiffusionRolloutAlgoConfig)
 
+    fsdp_layer_prefixes: list[str] = field(default_factory=lambda: ["transformer_blocks."])
+
     def __post_init__(self):
         import_external_libs(self.external_lib)
 
