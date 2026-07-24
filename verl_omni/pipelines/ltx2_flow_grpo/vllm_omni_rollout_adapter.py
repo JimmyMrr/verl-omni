@@ -16,7 +16,7 @@
 
 import copy
 import os
-from typing import Any
+from typing import Any, Iterable
 
 import numpy as np
 import torch
@@ -37,6 +37,27 @@ from verl_omni.pipelines.schedulers import FlowMatchSDEDiscreteScheduler
 from .common import calculate_shift, normalize_ltx_output_type
 
 __all__ = ["LTX23PipelineWithLogProb"]
+
+
+# Reverse mapping: VeOmni checkpoint key → diffusers key.
+# Order matters — longer/more-specific prefixes must come first to avoid
+# partial string matches (e.g. "prompt_adaln_single." before "adaln_single.").
+_VEOMNI_TO_DIFFUSERS_KEY_MAP = [
+    ("audio_prompt_adaln_single.", "audio_prompt_adaln."),
+    ("prompt_adaln_single.", "prompt_adaln."),
+    ("audio_adaln_single.", "audio_time_embed."),
+    ("av_ca_video_scale_shift_adaln_single.", "av_cross_attn_video_scale_shift."),
+    ("av_ca_audio_scale_shift_adaln_single.", "av_cross_attn_audio_scale_shift."),
+    ("av_ca_a2v_gate_adaln_single.", "av_cross_attn_video_a2v_gate."),
+    ("av_ca_v2a_gate_adaln_single.", "av_cross_attn_audio_v2a_gate."),
+    ("adaln_single.", "time_embed."),
+    ("scale_shift_table_a2v_ca_audio", "audio_a2v_cross_attn_scale_shift_table"),
+    ("scale_shift_table_a2v_ca_video", "video_a2v_cross_attn_scale_shift_table"),
+    ("q_norm", "norm_q"),
+    ("k_norm", "norm_k"),
+    ("audio_patchify_proj", "audio_proj_in"),
+    ("patchify_proj", "proj_in"),
+]
 
 
 @VllmOmniPipelineBase.register("LTX2Pipeline", algorithm="flow_grpo")
@@ -62,6 +83,24 @@ class LTX23PipelineWithLogProb(LTX23Pipeline):
         self._flow_grpo_seed = 42
         self._flow_grpo_prompt_context: _LTX23PromptContext | None = None
         self._flow_grpo_trajectory: dict[str, torch.Tensor | None] = {}
+
+    @staticmethod
+    def _remap_veomni_key(name: str) -> str:
+        """Map VeOmni checkpoint key naming back to diffusers naming."""
+        for veomni_prefix, diffusers_prefix in _VEOMNI_TO_DIFFUSERS_KEY_MAP:
+            if veomni_prefix in name:
+                return name.replace(veomni_prefix, diffusers_prefix)
+        return name
+
+    def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        """Load weights, remapping VeOmni-style keys to diffusers naming.
+
+        When the checkpoint has been converted to VeOmni key conventions
+        (e.g. ``adaln_single`` → ``time_embed``), remap them back so the
+        underlying ``LTX2VideoTransformer3DModel`` parameters match.
+        """
+        remapped = ((self._remap_veomni_key(name), tensor) for name, tensor in weights)
+        return super().load_weights(remapped)
 
     def _encode_token_ids(
         self,

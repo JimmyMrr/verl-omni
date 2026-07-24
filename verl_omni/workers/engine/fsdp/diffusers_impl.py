@@ -107,6 +107,11 @@ class DiffusersFSDPEngine(LoRAAdapterMixin, BaseEngine, ABC):
 
         self.rank = torch.distributed.get_rank()
 
+        # Bind the engine backend onto model_config so that
+        # ``DiffusionModelBase.get_class`` can resolve a backend-specific adapter
+        # when one is registered (e.g. LTX-2.3 has separate fsdp/veomni adapters).
+        self.model_config.backend = engine_config.strategy
+
         self._init_device_mesh()
 
         if self.engine_config.full_determinism:
@@ -924,7 +929,7 @@ class PPODiffusersFSDPEngine(DiffusersFSDPEngine):
             metrics = {}
 
         output = {
-            "model_output": model_output,
+            "model_output": {k: v.detach() if isinstance(v, torch.Tensor) else v for k, v in model_output.items()},
             "loss": loss.detach().item(),
             "metrics": metrics,
         }
@@ -1064,6 +1069,8 @@ class DPODiffusersFSDPEngine(DiffusersFSDPEngine):
                     loss.backward()
 
                 for key, val in meta_info.items():
+                    if not forward_only and key == "model_output":
+                        continue
                     meta_info_lst[key].append(val)
 
             output_lst.append(meta_info_lst)
@@ -1110,7 +1117,7 @@ class DPODiffusersFSDPEngine(DiffusersFSDPEngine):
             metrics = {}
 
         output = {
-            "model_output": model_output,
+            "model_output": {k: v.detach() if isinstance(v, torch.Tensor) else v for k, v in model_output.items()},
             "loss": loss.detach().item(),
             "metrics": metrics,
         }
@@ -1238,7 +1245,7 @@ class NFTDiffusersFSDPEngine(DiffusersFSDPEngine):
             metrics = {}
 
         output = {
-            "model_output": model_output,
+            "model_output": {k: v.detach() if isinstance(v, torch.Tensor) else v for k, v in model_output.items()},
             "loss": loss.detach().item(),
             "metrics": metrics,
         }

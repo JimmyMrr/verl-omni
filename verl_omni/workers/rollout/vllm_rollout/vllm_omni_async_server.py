@@ -148,6 +148,9 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         """Strip the mode selector; in AR mode also drop diffusion-only kwargs and
         normalize underscore keys vLLM-Omni expects with dashes."""
         engine_kwargs.pop("output_mode", None)
+        # Pop enable_cpu_offload so it is not converted to an unrecognized CLI
+        # flag; it is applied directly in run_server() instead.
+        self._enable_cpu_offload = engine_kwargs.pop("enable_cpu_offload", False)
         if self._ar_mode:
             engine_kwargs.pop("custom_pipeline", None)
             # TODO (mike): drop this later
@@ -226,6 +229,10 @@ class vLLMOmniHttpServer(vLLMHttpServer):
         deploy_config = getattr(args, "deploy_config", None)
         if deploy_config:
             engine_args["deploy_config"] = deploy_config
+        # Apply enable_cpu_offload from config (popped in _preprocess_engine_kwargs
+        # to avoid an unrecognized CLI flag).
+        if getattr(self, "_enable_cpu_offload", False):
+            engine_args["enable_cpu_offload"] = True
 
         if self._ar_mode:
             # AR mode: no diffusion pipeline. Drop None entries from
