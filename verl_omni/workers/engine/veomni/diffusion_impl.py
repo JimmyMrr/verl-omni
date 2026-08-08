@@ -40,6 +40,7 @@ from verl.utils.torch_dtypes import PrecisionType
 from verl.workers.engine.base import BaseEngine, BaseEngineCtx, EngineRegistry
 from verl.workers.engine.utils import enable_full_determinism, prepare_micro_batches
 
+from verl_omni.pipelines.model_base import DiffusionModelBase
 from verl_omni.pipelines.utils import build_scheduler, forward_and_sample_previous_step, prepare_model_inputs
 from verl_omni.workers.config import (
     DiffusionModelConfig,
@@ -612,9 +613,14 @@ class VeOmniDiffusionEngine(BaseEngine):
         # that matches every position in the key, inserting
         # ``model.diffusion_model.`` before *every character* and producing
         # garbled names like ``m…model.diffusion_model.o…model.diffusion_model.d…``
-        # that the rollout loader cannot match.  The VeOmni state-dict keys are
-        # already in the correct format; the rollout adapter's
-        # ``_remap_veomni_key`` handles any remaining VeOmni→diffusers renaming.
+        # that the rollout loader cannot match.
+        #
+        # Instead, the registered DiffusionModelBase adapter's
+        # ``convert_export_key`` remaps VeOmni→diffusers parameter names
+        # (e.g. ``adaln_single`` → ``time_embed``) so the exported
+        # state-dict is already in diffusers naming and the rollout adapter
+        # needs no backend-specific key handling.
+        model_cls = DiffusionModelBase.get_class(self.model_config)
 
         device = get_device_id()
         export_dtype = PrecisionType.to_dtype(self.engine_config.model_dtype)
@@ -625,7 +631,8 @@ class VeOmniDiffusionEngine(BaseEngine):
                 tensor = tensor.to(device, non_blocking=True)
                 if tensor.is_floating_point() and tensor.dtype != export_dtype:
                     tensor = tensor.to(export_dtype, non_blocking=True)
-                yield f"transformer.{name}", tensor
+                export_name = model_cls.convert_export_key(f"transformer.{name}")
+                yield export_name, tensor
 
         return param_generator(), None
 

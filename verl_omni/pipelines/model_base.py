@@ -173,6 +173,18 @@ class DiffusionModelBase(ABC):
         return
 
     @classmethod
+    def convert_export_key(cls, name: str) -> str:
+        """Convert a state-dict key to the naming expected by the rollout loader.
+
+        Default is identity.  Backends whose model class uses different
+        parameter names than the rollout pipeline (e.g. VeOmni's
+        ``LTX2VideoTransformer3DModel`` vs diffusers' ``LTXVideoTransformerModel``)
+        override this to remap keys at export time so the rollout adapter
+        stays backend-agnostic.
+        """
+        return name
+
+    @classmethod
     @abstractmethod
     def build_scheduler(cls, model_config: DiffusionModelConfig) -> SchedulerMixin:
         """Build and configure the diffusion scheduler for this model.
