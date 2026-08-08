@@ -12,18 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Diffusers + FSDP training adapter for LTX-2.3 FlowGRPO.
-
-This is the backend-agnostic default adapter registered with
-``backend=None``. It targets the diffusers ``LTXVideoTransformerModel``
-(loaded via ``diffusers.AutoModel``) whose ``forward()`` accepts
-``sigma``/``height``/``width``/``num_frames`` and returns a
-``(video_pred, audio_pred)`` tuple of 3D ``(B, seq, C)`` tensors.
-
-The VeOmni-specific override lives in :mod:`veomni_training_adapter` and is
-registered with ``backend="veomni"``; ``DiffusionModelBase.get_class`` picks it
-automatically when ``model_config.backend == "veomni"``.
-"""
+"""Diffusers + FSDP2 training adapter for LTX-2.3 FlowGRPO."""
 
 from typing import Optional
 

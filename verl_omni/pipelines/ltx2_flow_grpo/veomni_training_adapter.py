@@ -45,7 +45,7 @@ from verl_omni.pipelines.model_base import DiffusionModelBase
 from verl_omni.pipelines.schedulers import FlowMatchSDEDiscreteScheduler
 from verl_omni.workers.config import DiffusionModelConfig
 
-from .common import apply_x0_cfg, calculate_shift
+from .common import apply_x0_cfg, calculate_shift, remap_veomni_to_diffusers_key
 
 __all__ = ["LTX23FlowGRPOVeOmni"]
 
@@ -60,6 +60,17 @@ def _single_int(value: torch.Tensor, name: str) -> int:
 @DiffusionModelBase.register("LTX2Pipeline", algorithm="flow_grpo", backend="veomni")
 class LTX23FlowGRPOVeOmni(DiffusionModelBase):
     """Recompute joint audio-video transition probabilities with VeOmni's LTX2 transformer."""
+
+    @classmethod
+    def convert_export_key(cls, name: str) -> str:
+        """Remap VeOmni parameter names to diffusers naming for the rollout loader.
+
+        VeOmni's ``LTX2VideoTransformer3DModel`` uses different parameter names
+        (e.g. ``adaln_single`` → ``time_embed``, ``q_norm`` → ``norm_q``) than the
+        vLLM-Omni rollout model (diffusers ``LTXVideoTransformerModel``).  This
+        ensures the actor's state-dict keys match what the rollout expects.
+        """
+        return remap_veomni_to_diffusers_key(name)
 
     @classmethod
     def build_scheduler(cls, model_config: DiffusionModelConfig) -> FlowMatchSDEDiscreteScheduler:

@@ -188,19 +188,7 @@ class vLLMOmniColocateWorkerExtension(CustomPipelineWorkerExtension):
                 process_weights_after_loading(model, model_config, self.device)
             else:
                 # Diffusion pipeline worker: use its own loader.
-                # Wrap in inference_mode because vLLM-Omni's DiffusionModelRunner
-                # runs forward passes under torch.inference_mode(), which marks
-                # model parameters as inference tensors. In-place updates
-                # (param_data.copy_(...)) to inference tensors are only allowed
-                # inside an inference_mode context; without this wrapper the
-                # weight sync fails with:
-                #   RuntimeError: Inplace update to inference tensor outside
-                #   InferenceMode is not allowed.
-                def _load_weights_safe(weights):
-                    with torch.inference_mode():
-                        self.load_weights(weights)
-
-                receiver.receive_weights(on_bucket_received=_load_weights_safe)
+                receiver.receive_weights(on_bucket_received=lambda weights: self.load_weights(weights))
 
     def _get_zmq_handle(self) -> str:
         """Get ZMQ handle for communication.

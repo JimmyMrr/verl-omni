@@ -68,7 +68,7 @@ Review the ImageBind license before enabling this reward in your environment.
 
 ## Launch
 
-### LoRA (FSDP2)
+### LoRA (GPU)
 
 ```bash
 bash examples/flowgrpo_trainer/ltx2/run_ltx2_3_t2av_lora.sh
@@ -77,7 +77,7 @@ bash examples/flowgrpo_trainer/ltx2/run_ltx2_3_t2av_lora.sh
 The GPU recipe defaults to 8 GPUs, vLLM-Omni tensor parallel size 2, and one
 reward worker. CLAP and ImageBind run on `cuda:0` and `cuda:1`, respectively.
 
-### Ascend NPU
+### LoRA (Ascend NPU)
 
 ```bash
 bash examples/flowgrpo_trainer/ltx2/run_ltx2_3_t2av_lora_npu.sh

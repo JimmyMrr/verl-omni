@@ -24,7 +24,6 @@ import torch.distributed
 from tensordict import TensorDict
 from torch.distributed.tensor import DTensor
 from veomni.distributed.offloading import (
-    _reset_training_state,
     load_model_to_gpu,
     load_optimizer,
     offload_model_to_cpu,
