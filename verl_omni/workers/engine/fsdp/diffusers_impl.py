@@ -1407,14 +1407,4 @@ class EngineTrainModeCtx(BaseEngineCtx):
     def __exit__(self, exc_type, exc_value, traceback):
         assert isinstance(self.engine, DiffusersFSDPEngine)
         self.engine.optimizer_zero_grad()
-        try:
-            super().__exit__(exc_type, exc_value, traceback)
-        except (AssertionError, RuntimeError) as cleanup_err:
-            if exc_type is not None:
-                logger.error(
-                    "Error during FSDP model offload after %s; original error suppressed cleanup: %s",
-                    exc_type.__name__,
-                    cleanup_err,
-                )
-            else:
-                raise
+        super().__exit__(exc_type, exc_value, traceback)
