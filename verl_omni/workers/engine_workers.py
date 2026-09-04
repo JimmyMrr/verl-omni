@@ -828,6 +828,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
     @_with_routing_replay_flag(enabled=True)
     def infer_actor_batch(self, data: TensorDict) -> TensorDict:
         output = self.actor.infer_batch(data)
+
         return output.cpu() if output is not None else None
 
     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="actor"))

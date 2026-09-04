@@ -19,10 +19,7 @@ from typing import Any
 
 import ray
 import torch
-try:
-    import transfer_queue as tq
-except ImportError:
-    tq = None
+import transfer_queue as tq
 from tensordict import NonTensorData, NonTensorStack, TensorDict
 from verl.experimental.agent_loop import get_trajectory_info
 from verl.utils.ray_utils import auto_await
