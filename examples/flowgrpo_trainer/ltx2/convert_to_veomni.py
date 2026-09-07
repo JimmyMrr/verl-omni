@@ -30,7 +30,7 @@ CONFIG_ADDITIONS = {
     "apply_gated_attention": ("gated_attn", False),
     "with_audio": (None, True),          # always True for t2av model
     "av_ca_timestep_scale_multiplier": ("cross_attn_timestep_scale_multiplier", 1),
-    "caption_proj_before_connector": (None, False),
+    "caption_proj_before_connector": (None, True),
 }
 
 # ── weight key rename mapping (prefix replacements) ──────────────────

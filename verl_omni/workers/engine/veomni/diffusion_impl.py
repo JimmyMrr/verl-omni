@@ -34,6 +34,7 @@ from verl.utils import tensordict_utils as tu
 from verl.utils.checkpoint.fsdp_checkpoint_manager import FSDPCheckpointManager
 from verl.utils.device import get_device_id, get_device_name
 from verl.utils.memory_utils import aggressive_empty_cache
+from verl.utils.model import convert_weight_keys
 from verl.utils.py_functional import append_to_dict
 from verl.utils.torch_dtypes import PrecisionType
 from verl.workers.engine.base import BaseEngine, BaseEngineCtx, EngineRegistry
@@ -232,7 +233,7 @@ class VeOmniDiffusionEngine(BaseEngine):
             model=DiTModelArguments(
                 config_path=config_path,
                 model_path=weights_path,
-                model_config={"caption_proj_before_connector": True},
+                model_config={},
                 tokenizer_path=(
                     self.model_config.local_tokenizer_path or self.model_config.tokenizer_path or config_path
                 ),
