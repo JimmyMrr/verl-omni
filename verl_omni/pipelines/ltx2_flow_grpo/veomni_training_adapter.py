@@ -50,6 +50,72 @@ from .common import apply_x0_cfg, calculate_shift, remap_veomni_to_diffusers_key
 __all__ = ["LTX23FlowGRPOVeOmni"]
 
 
+def _patch_ltx2_gradient_checkpointing():
+    """Make ``LTXModel._process_transformer_blocks`` honour ``enable_reentrant``.
+
+    VeOmni's LTX2.3 model hard-codes ``use_reentrant=False`` in a direct
+    ``torch.utils.checkpoint.checkpoint()`` call, bypassing the
+    ``_gradient_checkpointing_func`` that ``gradient_checkpointing_enable()``
+    installs (which carries the configured ``use_reentrant`` value, along
+    with ``context_fn`` and ``early_stop``).  This patch replaces the
+    hard-coded call with ``self._gradient_checkpointing_func`` so that the
+    ``actor.veomni_config.enable_reentrant`` config actually takes effect.
+    """
+    try:
+        from veomni.models.diffusers.ltx2_3.ltx_core.guidance.perturbations import (
+            BatchedPerturbationConfig,
+            PerturbationType,
+        )
+        from veomni.models.diffusers.ltx2_3.ltx_core.model.transformer.model import LTXModel
+    except ImportError:
+        return
+
+    if getattr(LTXModel, "_verl_omni_gc_patched", False):
+        return
+
+    def _process_transformer_blocks(self, video, audio, perturbations):
+        if perturbations is None:
+            batch_size = (video or audio).x.shape[0]
+            perturbations = BatchedPerturbationConfig.empty(batch_size)
+
+        for block_idx, block in enumerate(self.transformer_blocks):
+            if video is not None:
+                video = self.block_input_processor(
+                    video,
+                    perturbations,
+                    block_idx,
+                    self_attn_type=PerturbationType.SKIP_VIDEO_SELF_ATTN,
+                    cross_attn_type=PerturbationType.SKIP_A2V_CROSS_ATTN,
+                )
+            if audio is not None:
+                audio = self.block_input_processor(
+                    audio,
+                    perturbations,
+                    block_idx,
+                    self_attn_type=PerturbationType.SKIP_AUDIO_SELF_ATTN,
+                    cross_attn_type=PerturbationType.SKIP_V2A_CROSS_ATTN,
+                )
+
+            if self.gradient_checkpointing and self.training:
+                ckpt_fn = getattr(self, "_gradient_checkpointing_func", None)
+                if ckpt_fn is not None:
+                    video, audio = ckpt_fn(block, video, audio)
+                else:
+                    video, audio = torch.utils.checkpoint.checkpoint(
+                        block, video, audio, use_reentrant=False,
+                    )
+            else:
+                video, audio = block(video=video, audio=audio)
+
+        return video, audio
+
+    LTXModel._process_transformer_blocks = _process_transformer_blocks
+    LTXModel._verl_omni_gc_patched = True
+
+
+_patch_ltx2_gradient_checkpointing()
+
+
 def _single_int(value: torch.Tensor, name: str) -> int:
     values = value.reshape(-1)
     if values.numel() == 0 or not torch.all(values == values[0]):
