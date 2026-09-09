@@ -33,6 +33,7 @@ The diffusers/FSDP counterpart lives in :mod:`diffusers_training_adapter` and
 is the ``backend=None`` default.
 """
 
+import logging
 from typing import Optional
 
 import numpy as np
@@ -48,6 +49,9 @@ from verl_omni.workers.config import DiffusionModelConfig
 from .common import apply_x0_cfg, calculate_shift, remap_veomni_to_diffusers_key
 
 __all__ = ["LTX23FlowGRPOVeOmni"]
+
+_logger = logging.getLogger(__name__)
+_logger.setLevel(logging.INFO)
 
 
 def _patch_ltx2_gradient_checkpointing():
@@ -99,8 +103,24 @@ def _patch_ltx2_gradient_checkpointing():
             if self.gradient_checkpointing and self.training:
                 ckpt_fn = getattr(self, "_gradient_checkpointing_func", None)
                 if ckpt_fn is not None:
+                    if not getattr(self, "_verl_omni_reentrant_logged", False):
+                        kw = getattr(ckpt_fn, "keywords", {}) or {}
+                        use_reentrant = kw.get("use_reentrant", False)
+                        print(
+                            "[verl-omni] LTX2 gradient checkpointing via "
+                            f"_gradient_checkpointing_func (use_reentrant={use_reentrant})",
+                            flush=True,
+                        )
+                        object.__setattr__(self, "_verl_omni_reentrant_logged", True)
                     video, audio = ckpt_fn(block, video, audio)
                 else:
+                    if not getattr(self, "_verl_omni_reentrant_logged", False):
+                        print(
+                            "[verl-omni] LTX2 gradient checkpointing fallback: "
+                            "_gradient_checkpointing_func not set, using use_reentrant=False",
+                            flush=True,
+                        )
+                        object.__setattr__(self, "_verl_omni_reentrant_logged", True)
                     video, audio = torch.utils.checkpoint.checkpoint(
                         block, video, audio, use_reentrant=False,
                     )
@@ -114,7 +134,6 @@ def _patch_ltx2_gradient_checkpointing():
 
 
 _patch_ltx2_gradient_checkpointing()
-
 
 def _single_int(value: torch.Tensor, name: str) -> int:
     values = value.reshape(-1)
