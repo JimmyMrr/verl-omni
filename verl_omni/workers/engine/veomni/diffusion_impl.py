@@ -78,10 +78,9 @@ class VeOmniDiffusionEngine(BaseEngine):
         self.mode = None
         self.rank = torch.distributed.get_rank()
 
-        # Bind the engine backend onto model_config so that
-        # ``DiffusionModelBase.get_class`` can resolve a backend-specific adapter
-        # when one is registered (e.g. LTX-2.3 has separate fsdp/veomni adapters).
-        self.model_config.backend = engine_config.strategy
+        # ``DiffusionModelBase.get_class`` resolves adapters by
+        # ``(architecture, algorithm)``.  LTX-2.3 uses a single unified adapter
+        # that detects the VeOmni model at runtime.
 
         self._init_device_mesh()
 

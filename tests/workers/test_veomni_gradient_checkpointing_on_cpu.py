@@ -275,10 +275,9 @@ class _FakeModule:
 def test_configure_train_mode_preserves_gradient_checkpointing():
     """``configure_train_mode`` must NOT set ``gradient_checkpointing=False``."""
     adapter = _get_adapter_module()
-    LTX23FlowGRPOVeOmni = adapter.LTX23FlowGRPOVeOmni
 
     module = _FakeModule(gradient_checkpointing=True)
-    LTX23FlowGRPOVeOmni.configure_train_mode(module)
+    adapter.configure_train_mode(module)
 
     assert module.module.gradient_checkpointing is True, (
         "gradient_checkpointing must remain True after configure_train_mode; "

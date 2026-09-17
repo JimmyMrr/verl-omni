@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Diffusers + FSDP2 training adapter for LTX-2.3 FlowGRPO."""
+"""Diffusers + FSDP2 training adapter for LTX-2.3 FlowGRPO.
+
+This adapter is registered with ``DiffusionModelBase`` as the default for
+``("LTX2Pipeline", "flow_grpo")``.  When the VeOmni engine is in use, the
+module passed to the adapter methods is VeOmni's ``LTX2VideoTransformer3DModel``
+rather than diffusers' ``LTXVideoTransformerModel``; the adapter delegates to
+:mod:`veomni_training_adapter` helpers in that case.
+"""
 
 from typing import Optional
 
@@ -26,6 +33,7 @@ from verl_omni.pipelines.model_base import DiffusionModelBase
 from verl_omni.pipelines.schedulers import FlowMatchSDEDiscreteScheduler
 from verl_omni.workers.config import DiffusionModelConfig
 
+from . import veomni_training_adapter as veomni
 from .common import apply_x0_cfg, calculate_shift
 
 __all__ = ["LTX23FlowGRPO"]
@@ -40,7 +48,28 @@ def _single_int(value: torch.Tensor, name: str) -> int:
 
 @DiffusionModelBase.register("LTX2Pipeline", algorithm="flow_grpo")
 class LTX23FlowGRPO(DiffusionModelBase):
-    """Recompute joint audio-video transition probabilities with diffusers."""
+    """Recompute joint audio-video transition probabilities for LTX-2.3.
+
+    Supports both diffusers (FSDP) and VeOmni backends via runtime detection.
+    """
+
+    # ── VeOmni-only hooks ──────────────────────────────────────────────
+
+    @classmethod
+    def convert_export_key(cls, name: str) -> str:
+        """Remap VeOmni parameter names to diffusers naming for the rollout loader.
+
+        Only called by the VeOmni engine; the FSDP engine uses
+        ``convert_weight_keys`` instead.
+        """
+        return veomni.convert_export_key(name)
+
+    @classmethod
+    def configure_train_mode(cls, module: torch.nn.Module) -> None:
+        """VeOmni-specific train-mode configuration (no-op for diffusers)."""
+        veomni.configure_train_mode(module)
+
+    # ── Shared scheduler logic ─────────────────────────────────────────
 
     @classmethod
     def build_scheduler(cls, model_config: DiffusionModelConfig) -> FlowMatchSDEDiscreteScheduler:
@@ -72,6 +101,8 @@ class LTX23FlowGRPO(DiffusionModelBase):
         )
         scheduler.set_timesteps(num_steps, device=device, sigmas=sigmas, mu=mu)
 
+    # ── Model input preparation ────────────────────────────────────────
+
     @classmethod
     def prepare_model_inputs(
         cls,
@@ -102,6 +133,16 @@ class LTX23FlowGRPO(DiffusionModelBase):
         latent_height = model_config.pipeline.height // 32
         latent_width = model_config.pipeline.width // 32
         frame_rate = model_config.pipeline.frame_rate
+        guidance_scale = model_config.pipeline.guidance_scale or 1.0
+
+        if veomni.is_veomni_module(module):
+            return veomni.prepare_veomni_inputs(
+                video_latents, audio_latents, timestep, prompt_embeds,
+                prompt_embeds_mask, negative_prompt_embeds,
+                negative_prompt_embeds_mask, micro_batch,
+                latent_frames, latent_height, latent_width, frame_rate,
+                guidance_scale,
+            )
 
         common = {
             "hidden_states": video_latents,
@@ -123,7 +164,6 @@ class LTX23FlowGRPO(DiffusionModelBase):
             "audio_encoder_attention_mask": prompt_embeds_mask,
         }
 
-        guidance_scale = model_config.pipeline.guidance_scale or 1.0
         if guidance_scale <= 1.0:
             return model_inputs, None
         if negative_prompt_embeds is None or negative_prompt_embeds_mask is None:
@@ -139,11 +179,18 @@ class LTX23FlowGRPO(DiffusionModelBase):
         }
         return model_inputs, negative_model_inputs
 
+    # ── Prediction ─────────────────────────────────────────────────────
+
     @staticmethod
     def _predict(module: ModelMixin, model_inputs: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
-        """Run the LTX transformer and return float32 video/audio velocities."""
+        """Run the transformer and return float32 video/audio velocities in 3D format."""
+        if veomni.is_veomni_module(module):
+            return veomni.predict_veomni(module, model_inputs)
+
         video_pred, audio_pred = module(**model_inputs)
         return video_pred.float(), audio_pred.float()
+
+    # ── Forward + sample ────────────────────────────────────────────────
 
     @classmethod
     def forward_and_sample_previous_step(
@@ -157,12 +204,27 @@ class LTX23FlowGRPO(DiffusionModelBase):
         step: int,
     ):
         """Recompute one selected CPS/SDE transition and its joint log-probability."""
+        if veomni.is_veomni_module(module):
+            return veomni.forward_and_sample_previous_step(
+                module, scheduler, model_config, model_inputs,
+                negative_model_inputs, scheduler_inputs, step,
+            )
+
         if scheduler_inputs is None:
             raise ValueError("LTX-2.3 FlowGRPO requires rollout scheduler inputs.")
 
         video_latents = model_inputs["hidden_states"].float()
         audio_latents = model_inputs["audio_hidden_states"].float()
+
         video_pred, audio_pred = cls._predict(module, model_inputs)
+
+        if video_latents.ndim == 5:
+            B, C, F, H, W = video_latents.shape
+            video_latents = video_latents.permute(0, 2, 3, 4, 1).reshape(B, F * H * W, C)
+
+        if audio_latents.ndim == 4:
+            B, C, F, M = audio_latents.shape
+            audio_latents = audio_latents.permute(0, 2, 1, 3).reshape(B, F, C * M)
 
         guidance_scale = model_config.pipeline.guidance_scale or 1.0
         if guidance_scale > 1.0:
